@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Stomach Model Viewer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.9.1/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+    
+    <style>
+        /* FULL SCREEN SETUP */
+        html, body { 
+            margin: 0; padding: 0; width: 100%; height: 100%; 
+            overflow: hidden; background-color: #000; 
+            font-family: 'Roboto', sans-serif; 
+        }
+        
+        #canvas-container { 
+            width: 100%; height: 100%; position: absolute; top: 0; left: 0; 
+        }
+        
+        #viewer-canvas { display: block; width: 100%; height: 100%; }
+        
+        /* UI ELEMENTS */
+        .back-button { 
+            position: absolute; top: 20px; left: 20px; padding: 10px 20px; 
+            background-color: rgba(30, 30, 30, 0.8); color: white; 
+            border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 8px; 
+            cursor: pointer; text-decoration: none; z-index: 100; font-weight: 500;
+        }
+        .back-button:hover { background-color: #444; }
+
+        .controls-panel {
+            position: absolute; top: 20px; right: 20px; 
+            background: rgba(0, 0, 0, 0.8); padding: 15px; border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.2); z-index: 100;
+            display: flex; flex-direction: column; gap: 10px; width: 220px;
+        }
+        
+        .controls-panel label { font-size: 0.9rem; color: #ccc; }
+        
+        select {
+            width: 100%; padding: 8px; border-radius: 5px; border: none;
+            background: #333; color: white; cursor: pointer; font-size: 0.95rem;
+        }
+        
+        .help-text {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            color: rgba(255,255,255,0.5); font-size: 0.9rem; pointer-events: none;
+            text-align: center;
+        }
+
+        /* Loader */
+        #model-loader-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #111; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 200; color: white;
+        }
+        .spinner {
+            width: 50px; height: 50px; border: 5px solid #333; border-top: 5px solid #8E44AD;
+            border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Labels */
+        .annotation-label {
+            background-color: rgba(0, 0, 0, 0.8); color: #fff; padding: 8px 12px; border-radius: 4px;
+            font-size: 13px; border: 1px solid rgba(255, 255, 255, 0.5); 
+            pointer-events: none; opacity: 0; transition: opacity 0.5s;
+        }
+        .annotation-label.visible { opacity: 1; }
+    </style>
+</head>
+<body>
+    <div id="canvas-container">
+        <a href="javascript:window.close();" class="back-button">&larr; Back</a>
+        
+        <div class="controls-panel">
+            <label for="texture-selector"><strong>Stomach Texture:</strong></label>
+            <select id="texture-selector">
+                <option value="default">Default / Healthy</option>
+                <option value="dyed-lifted-polyps">Dyed Lifted Polyps</option>
+                <option value="dyed-resection-margins">Dyed Resection Margins</option>
+                <option value="esophagitis">Esophagitis</option>
+                <option value="normal-cecum">Normal Cecum</option>
+                <option value="normal-pylorus">Normal Pylorus</option>
+                <option value="normal-z-line">Normal Z-Line</option>
+                <option value="polyps">Polyps</option>
+                <option value="ulcerative-colitis">Ulcerative Colitis</option>
+            </select>
+        </div>
+
+        <div class="help-text">Left Click: Rotate &bull; Right Click: Pan &bull; Scroll: Zoom Inside/Outside</div>
+
+        <canvas id="viewer-canvas"></canvas>
+        <div id="label-container"></div>
+        
+        <div id="model-loader-overlay">
+            <div class="spinner"></div>
+            <div id="loading-text">Loading 3D Model...</div>
+        </div>
+        
+        <div style="display: none;">
+            <div id="polyps-label" class="annotation-label"><strong>Polyps</strong><br>Abnormal tissue growth</div>
+            <div id="esophagitis-label" class="annotation-label"><strong>Esophagitis</strong><br>Inflammation</div>
+            <div id="cecum-label" class="annotation-label"><strong>Normal Cecum</strong><br>Healthy</div>
+            <div id="pylorus-label" class="annotation-label"><strong>Normal Pylorus</strong><br>Healthy</div>
+            <div id="ulcerative-colitis-label" class="annotation-label"><strong>Ulcerative Colitis</strong><br>Inflammation</div>
+            <div id="z-line-label" class="annotation-label"><strong>Normal Z-Line</strong><br>Healthy</div>
+            <div id="resection-label" class="annotation-label"><strong>Dyed Resection</strong><br>Post-surgery</div>
+        </div>
+    </div>
+
+    <script>
+        var threeJsApp = (function() {
+            let camera, scene, renderer, controls, labelRenderer, model;
+            let textureLoader;
+            let allLabels = {};
+            
+            const TEXTURE_PATH = "{{ url_for('static', filename='3d_stomach_model/textures/') }}";
+
+            // UPDATED CAMERA FOCUS POINTS (Closer and more "front-on")
+            const focusPoints = {
+                // Default: Z changed from 20 -> 12 (Much Closer), Y changed 10 -> 2 (Eye Level)
+                'default': { camPos: [0, 2, 12], target: [0, 1, 0], label: null },
+                
+                // Specific diseases also adjusted to be closer
+                'polyps': { camPos: [4, 4, 6], target: [2, 3, 0], label: 'polyps-label' },
+                'esophagitis': { camPos: [0, 10, 6], target: [0, 8, 0], label: 'esophagitis-label' },
+                'normal-cecum': { camPos: [-6, 1, 8], target: [-4, 0, 0], label: 'cecum-label' },
+                'normal-pylorus': { camPos: [5, 2, 8], target: [3, 1, 0], label: 'pylorus-label' },
+                'ulcerative-colitis': { camPos: [-5, 3, 10], target: [-2, 2, 0], label: 'ulcerative-colitis-label' },
+                'dyed-lifted-polyps': { camPos: [4, 4, 6], target: [2, 3, 0], label: 'polyps-label' },
+                'dyed-resection-margins': { camPos: [0, 4, 10], target: [0, 4, 0], label: 'resection-label' },
+                'normal-z-line': { camPos: [0, 9, 7], target: [0, 8, 0], label: 'z-line-label' }
+            };
+
+            function init(onModelLoaded) {
+                const container = document.getElementById('canvas-container');
+                
+                scene = new THREE.Scene(); 
+                scene.background = new THREE.Color(0x000000);
+                
+                // 1. UPDATED CAMERA: Near plane set to 0.01 for microscopic zoom
+                camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.01, 1000);
+                
+                renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('viewer-canvas'), antialias: true });
+                renderer.setSize(container.clientWidth, container.clientHeight);
+                renderer.toneMapping = THREE.ACESFilmicToneMapping;
+                renderer.toneMappingExposure = 1.3;
+                
+                labelRenderer = new THREE.CSS2DRenderer({ element: document.getElementById('label-container') });
+                labelRenderer.setSize(container.clientWidth, container.clientHeight);
+                labelRenderer.domElement.style.position = 'absolute'; 
+                labelRenderer.domElement.style.top = '0px';
+                labelRenderer.domElement.style.pointerEvents = 'none';
+                container.appendChild(labelRenderer.domElement);
+
+                // Lighting
+                scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+                const cameraLight = new THREE.PointLight(0xffffff, 0.8, 100);
+                camera.add(cameraLight);
+                scene.add(camera);
+                const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+                dirLight.position.set(5, 10, 10);
+                scene.add(dirLight);
+
+                // 2. UPDATED CONTROLS: MinDistance 0.01 allows flying INSIDE
+                controls = new THREE.OrbitControls(camera, renderer.domElement);
+                controls.enableDamping = true;
+                controls.dampingFactor = 0.05;
+                controls.minDistance = 0.01; 
+                controls.maxDistance = 500;
+                controls.target.set(0, 0, 0);
+
+                textureLoader = new THREE.TextureLoader();
+                const gltfLoader = new THREE.GLTFLoader();
+                
+                gltfLoader.load("{{ url_for('static', filename='3d_stomach_model/scene.gltf') }}", (gltf) => {
+                    model = gltf.scene;
+                    
+                    const box = new THREE.Box3().setFromObject(model);
+                    const size = box.getSize(new THREE.Vector3()).length();
+                    const scaleFactor = 25.0 / size; 
+                    model.scale.set(scaleFactor, scaleFactor, scaleFactor);
+                    
+                    const center = box.getCenter(new THREE.Vector3());
+                    model.position.sub(center); // Centers model at 0,0,0
+
+                    model.traverse((child) => {
+                        if (child.isMesh) {
+                            child.material.side = THREE.DoubleSide;
+                            child.material.map.encoding = THREE.sRGBEncoding;
+                            child.material.needsUpdate = true;
+                        }
+                    });
+
+                    scene.add(model);
+                    createLabels();
+                    
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const focusPart = urlParams.get('focus') || 'default';
+                    
+                    const selector = document.getElementById('texture-selector');
+                    if (selector.querySelector(`option[value="${focusPart}"]`)) {
+                        selector.value = focusPart;
+                        changeTexture(focusPart); 
+                    }
+                    
+                    focusOnPart(focusPart, true);
+                    if(onModelLoaded) onModelLoaded();
+                });
+                
+                animate();
+                window.addEventListener('resize', onResize);
+            }
+
+            function changeTexture(textureName) {
+                if (!model) return;
+                const loadingText = document.getElementById('loading-text');
+                loadingText.textContent = "Updating Texture...";
+                
+                let fileName = (textureName === 'default') ? "default.png" : `${textureName}.png`;
+                const fullPath = TEXTURE_PATH + fileName;
+
+                textureLoader.load(fullPath, (texture) => {
+                    texture.flipY = false; 
+                    texture.encoding = THREE.sRGBEncoding;
+                    model.traverse((child) => {
+                        if (child.isMesh && child.material) {
+                            child.material.map = texture;
+                            child.material.side = THREE.DoubleSide;
+                            child.material.needsUpdate = true;
+                        }
+                    });
+                });
+            }
+
+            function createLabels() {
+                Object.keys(focusPoints).forEach(key => {
+                    const pt = focusPoints[key];
+                    if(!pt.label) return;
+                    const div = document.getElementById(pt.label);
+                    const label = new THREE.CSS2DObject(div);
+                    label.position.set(pt.target[0], pt.target[1], pt.target[2]);
+                    scene.add(label);
+                    allLabels[pt.label] = label;
+                });
+            }
+
+            function focusOnPart(part, animated) {
+                let f = focusPoints[part] || focusPoints.default;
+                gsap.to(camera.position, { duration: 1.5, x: f.camPos[0], y: f.camPos[1], z: f.camPos[2], ease: "power2.inOut" });
+                gsap.to(controls.target, { duration: 1.5, x: f.target[0], y: f.target[1], z: f.target[2], ease: "power2.inOut" });
+                
+                Object.keys(allLabels).forEach(id => {
+                    const el = allLabels[id].element;
+                    if(id === f.label) setTimeout(() => el.classList.add('visible'), 1000);
+                    else el.classList.remove('visible');
+                });
+            }
+
+            function onResize() {
+                camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight); labelRenderer.setSize(window.innerWidth, window.innerHeight);
+            }
+
+            function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); labelRenderer.render(scene, camera); }
+            
+            return { init: init, changeTexture: changeTexture };
+        })();
+
+        document.addEventListener('DOMContentLoaded', () => {
+            window.threeJsApp.init(() => {
+                document.getElementById('model-loader-overlay').style.display = 'none';
+            });
+            const selector = document.getElementById('texture-selector');
+            selector.addEventListener('change', (e) => window.threeJsApp.changeTexture(e.target.value));
+        });
+    </script>
+</body>
+</html>

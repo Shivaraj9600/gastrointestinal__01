@@ -1,0 +1,11 @@
+Model Information:
+* title:	Alien Rock 4
+* source:	https://sketchfab.com/3d-models/alien-rock-4-11238cc4d9814c3ab54294122b3d51b7
+* author:	Aiekick (https://sketchfab.com/Aiekick)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Alien Rock 4" (https://sketchfab.com/3d-models/alien-rock-4-11238cc4d9814c3ab54294122b3d51b7) by Aiekick (https://sketchfab.com/Aiekick) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
