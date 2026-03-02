@@ -10,7 +10,7 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.9.1/gsap.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
     <div class="page-container">
@@ -20,19 +20,19 @@
         </div>
         
         <div class="right-column">
-            <div class="container">
+            <div class="container" id="report-container">
                 <header>
-                    <h1>Gastrointestinal AI Diagnosis</h1>
+                    <h1>Gastrointestinal Disease Classifier</h1>
                     <p>Upload endoscopic imagery for analysis.</p>
                 </header>
 
                 <main>
                     <div class="model-select-container" style="margin-bottom: 20px; text-align: left;">
-                        <label for="model-selector" style="font-weight: 700; color: var(--dark-color); display: block; margin-bottom: 8px;">Select AI Model:</label>
+                        <label for="model-selector" style="font-weight: 700; color: var(--dark-color); display: block; margin-bottom: 8px;">Select Model:</label>
                         <select id="model-selector" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); font-size: 1rem; background: #fff; cursor: pointer; color: var(--text-color);">
-                            <option value="cnn" selected>⚡ Custom CNN (Fast)</option>
-                            <option value="swin">✨ Swin Transformer (High Accuracy)</option>
-                            <option value="resnet">🧠 ResNet50 (Robust)</option>
+                            <option value="cnn" selected>Custom CNN </option>
+                            <option value="swin">Swin Transformer </option>
+                            <option value="resnet">ResNet50 </option>
                         </select>
                     </div>
 
@@ -46,7 +46,7 @@
                         </div>
                         <div id="image-preview-container" style="display: none;">
                             <img id="image-preview" src="#" alt="Preview">
-                            <button id="remove-image-btn">&times;</button>
+                            <button id="remove-image-btn">×</button>
                         </div>
                         <button id="predict-btn" class="predict-btn" disabled>Analyze Image</button>
                     </div>
@@ -68,15 +68,18 @@
                                     <p style="margin:0; color:#888;" id="inf-time">--</p>
                                 </div>
                             </div>
-                            <button id="view-3d-btn" class="view-3d-btn" style="display: none;">View in 3D Stomach Model</button>
+                            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                                <button id="view-3d-btn" class="view-3d-btn" style="display: none; flex: 1;">View in 3D Stomach Model</button>
+                                <button id="download-pdf-btn" class="view-3d-btn" style="display: none; flex: 1; background-color: #27ae60;">📄 Download PDF Report</button>
+                            </div>
                         </div>
 
                         <div class="result-container">
-                            <h2>AI Analysis</h2>
+                            <h2>Analysis image</h2>
                             <div class="xai-tabs" style="display: flex; gap: 8px; margin-bottom: 10px;">
-                                <button class="xai-tab active" onclick="switchXaiTab('gradcam')">Grad-CAM</button>
-                                <button class="xai-tab" onclick="switchXaiTab('lime')">LIME</button>
-                                <button class="xai-tab" onclick="switchXaiTab('shap')">SHAP</button>
+                                <button class="pdf_download xai-tab active" onclick="switchXaiTab('gradcam')">Grad-CAM</button>
+                                <button class="pdf_download xai-tab" onclick="switchXaiTab('lime')">LIME</button>
+                                <button class="pdf_download xai-tab" onclick="switchXaiTab('shap')">SHAP</button>
                             </div>
                             
                             <div class="xai-viewer" style="position: relative; height: 300px; background: #f0f0f0; border-radius:8px; overflow:hidden; display:flex; justify-content:center; align-items:center;">
@@ -92,10 +95,11 @@
                         </div>
                     </div>
                 </main>
-                <footer><p>Gastrointestinal Disease Classifier</p></footer>
+                <footer><p>Gastrointestinal Disease Classifier </p></footer>
             </div>
         </div>
     </div>
+    
     <a href="https://www.google.com/maps/search/gastrointestinal+hospital+near+me" target="_blank"
    style="position: fixed; 
           bottom: 30px; 
@@ -123,21 +127,9 @@
          style="width: 32px; 
                 height: 32px; 
                 object-fit: contain;">
-</a>
-
-<!-- cursor -->
-
-<!-- cursor end -->
-
-
-<!-- pdf thing -->
-
-
-<!-- pdf end -->
-
+    </a>
 
     <script>
-        
         document.addEventListener('DOMContentLoaded', () => {
             const fileInput = document.getElementById('file-input');
             const predictBtn = document.getElementById('predict-btn');
@@ -187,6 +179,10 @@
                 uploadArea.style.display = 'flex';
                 predictBtn.disabled = true;
                 resultsWrapper.style.display = 'none';
+                
+                // Keep PDF button hidden when image is removed
+                const pdfBtn = document.getElementById('download-pdf-btn');
+                if (pdfBtn) pdfBtn.style.display = 'none';
             });
 
             predictBtn.addEventListener('click', async () => {
@@ -274,10 +270,20 @@
                                         <span class="barchart-value">${pred.confidence}%</span>
                                     </div>`;
                     allResultsList.appendChild(li);
+                window.pdfImages = {
+                    gradcam: data.gradcam,
+                    lime: data.lime,
+                    shap: data.shap
+                };
                 });
 
                 resultsWrapper.style.display = 'block';
                 view3dBtn.style.display = 'block';
+                
+                // CHANGE 4: Show the PDF button when results arrive
+                const pdfBtn = document.getElementById('download-pdf-btn');
+                if (pdfBtn) pdfBtn.style.display = 'block';
+                
                 if(window.setSphereState) window.setSphereState(data.health_status);
             }
         });
@@ -297,7 +303,6 @@
             scene.add(new THREE.AmbientLight(0xffffff, 0.8));
             const dl = new THREE.DirectionalLight(0xffffff, 1); dl.position.set(5,10,7); scene.add(dl);
             
-            // USE "FRONT PAGE" MODEL PATH: static/model/scene.gltf
             new THREE.GLTFLoader().load("{{ url_for('static', filename='model/scene.gltf') }}", (gltf) => {
                 model = gltf.scene;
                 model.traverse((n) => { if(n.isMesh && n.material) reactiveMaterials.push({material:n.material, originalColor:n.material.color.clone(), originalEmissive:n.material.emissive.clone()}); });
@@ -320,5 +325,7 @@
             };
         });
     </script>
+    
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>
